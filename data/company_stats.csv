@@ -1,0 +1,21 @@
+Ticker,Volatility (%),Total Return (%),Years,Notes
+QQQ,22.0,11.9,15,NASDAQ-100 ETF
+SPY,18.0,9.6,15,S&P 500 ETF
+DIA,17.0,8.7,15,Dow Jones ETF
+MSTR,65.0,32.0,8,MicroStrategy
+PDD,42.0,29.6,6,Pinduoduo
+CCEP,18.5,8.1,10,Coca-Cola Europacific
+TRI,28.0,12.1,12,Thomson Reuters
+AZN,20.0,7.7,14,AstraZeneca
+MELI,48.0,23.2,9,MercadoLibre
+MRVL,55.0,26.1,7,Marvell
+ASML,30.0,12.7,15,ASML Holding
+SHOP,60.0,31.2,8,Shopify
+TEAM,45.0,19.5,9,Atlassian
+GFS,50.0,26.4,4,GlobalFoundries
+ZS,58.0,29.4,6,Zscaler
+ARM,52.0,24.6,5,Arm Holdings
+
+
+
+
