@@ -1,120 +1,162 @@
 import pandas as pd
 
 
-# ======================================================
-# LOADERS
-# ======================================================
+# -----------------------------------------------------
+# Load company statistics
+# -----------------------------------------------------
 
-def load_company_stats(path: str) -> pd.DataFrame:
+def load_company_stats(path):
+
     df = pd.read_csv(path)
 
-    required = [
-        "Ticker",
-        "Volatility (%)",
-        "Total Return (%)",
-        "Years",
-    ]
-
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"company_stats.csv is missing columns: {missing}")
+    df.columns = [c.strip() for c in df.columns]
 
     return df
 
 
-def load_label_offsets(path: str) -> pd.DataFrame:
+# -----------------------------------------------------
+# Load bubble label offsets
+# -----------------------------------------------------
+
+def load_label_offsets(path):
+
     df = pd.read_csv(path)
 
-    required = ["Ticker", "Offset_X", "Offset_Y", "Color"]
-    missing = [c for c in required if c not in df.columns]
-
-    if missing:
-        raise ValueError(f"label_offsets.csv is missing columns: {missing}")
+    df.columns = [c.strip() for c in df.columns]
 
     return df
 
 
-def load_line_label_offsets(path: str) -> pd.DataFrame:
+# -----------------------------------------------------
+# Load line label offsets
+# -----------------------------------------------------
+
+def load_line_label_offsets(path):
+
     df = pd.read_csv(path)
 
-    required = ["Type", "Level", "Offset_X", "Offset_Y", "RotationFactor"]
-    missing = [c for c in required if c not in df.columns]
-
-    if missing:
-        raise ValueError(f"line_label_offsets.csv is missing columns: {missing}")
+    df.columns = [c.strip() for c in df.columns]
 
     return df
 
 
-def load_fundamentals(path: str) -> pd.DataFrame:
-    return pd.read_csv(path)
+# -----------------------------------------------------
+# Load fundamentals
+# -----------------------------------------------------
+
+def load_fundamentals(path):
+
+    try:
+        df = pd.read_csv(path)
+
+        df.columns = [c.strip() for c in df.columns]
+
+        return df
+
+    except FileNotFoundError:
+
+        return pd.DataFrame()
 
 
-# ======================================================
-# CALCULATIONS
-# ======================================================
+# -----------------------------------------------------
+# Calculate Sharpe ratio
+# -----------------------------------------------------
 
-def calculate_sharpe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Adds Sharpe ratio based on annualized return / volatility.
-    """
+def calculate_sharpe(df, risk_free_rate=4.0):
+
     df = df.copy()
 
-    df["Annual Return (%)"] = (
-        (1 + df["Total Return (%)"] / 100) ** (1 / df["Years"]) - 1
-    ) * 100
+    if "Total Return (%)" in df.columns and "Volatility (%)" in df.columns:
 
-    df["Sharpe"] = df["Annual Return (%)"] / df["Volatility (%)"]
+        df["Sharpe"] = (
+            (df["Total Return (%)"] - risk_free_rate)
+            / df["Volatility (%)"]
+        )
+
+    else:
+
+        df["Sharpe"] = None
 
     return df
 
 
-# ======================================================
-# UPDATERS
-# ======================================================
+# -----------------------------------------------------
+# Update bubble label offset
+# -----------------------------------------------------
 
 def update_offset(
-    df: pd.DataFrame,
-    ticker: str,
-    dx: float,
-    dy: float,
-    color: str,
-) -> pd.DataFrame:
+    df,
+    ticker,
+    offset_x,
+    offset_y,
+    color
+):
+
     df = df.copy()
 
-    mask = df["Ticker"].astype(str) == str(ticker)
+    mask = df["Ticker"] == ticker
 
     if mask.any():
-        df.loc[mask, ["Offset_X", "Offset_Y", "Color"]] = [dx, dy, color]
+
+        df.loc[mask, "Offset_X"] = offset_x
+        df.loc[mask, "Offset_Y"] = offset_y
+        df.loc[mask, "Color"] = color
+
     else:
-        df.loc[len(df)] = [ticker, dx, dy, color]
+
+        new_row = pd.DataFrame(
+            {
+                "Ticker": [ticker],
+                "Offset_X": [offset_x],
+                "Offset_Y": [offset_y],
+                "Color": [color],
+            }
+        )
+
+        df = pd.concat([df, new_row], ignore_index=True)
 
     return df
 
+
+# -----------------------------------------------------
+# Update line label offset
+# -----------------------------------------------------
 
 def update_line_offset(
-    df: pd.DataFrame,
-    level: float,
-    offset_x: float,
-    offset_y: float,
-    rotation: float,
-) -> pd.DataFrame:
-    """
-    Updates ONLY Sharpe line with given level.
-    Inflation line is not editable via UI.
-    """
+    df,
+    line_type,
+    level,
+    offset_x,
+    offset_y,
+    rotation_factor
+):
+
     df = df.copy()
 
-    mask = (df["Type"] == "Sharpe") & (df["Level"] == level)
+    mask = (
+        (df["Type"] == line_type)
+        &
+        (df["Level"] == level)
+    )
 
-    if not mask.any():
-        raise ValueError(f"Sharpe line {level} not found")
+    if mask.any():
 
-    df.loc[mask, ["Offset_X", "Offset_Y", "Rotation"]] = [
-        offset_x,
-        offset_y,
-        rotation,
-    ]
+        df.loc[mask, "Offset_X"] = offset_x
+        df.loc[mask, "Offset_Y"] = offset_y
+        df.loc[mask, "RotationFactor"] = rotation_factor
+
+    else:
+
+        new_row = pd.DataFrame(
+            {
+                "Type": [line_type],
+                "Level": [level],
+                "Offset_X": [offset_x],
+                "Offset_Y": [offset_y],
+                "RotationFactor": [rotation_factor],
+            }
+        )
+
+        df = pd.concat([df, new_row], ignore_index=True)
 
     return df
-

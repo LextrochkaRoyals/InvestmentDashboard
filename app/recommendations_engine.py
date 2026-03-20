@@ -1,209 +1,150 @@
-import math
 import pandas as pd
-from typing import Dict, List
 
 
-# =========================================================
-# Financial math
-# =========================================================
+# -----------------------------------------------------
+# Portfolio metrics
+# -----------------------------------------------------
 
-def future_value_monthly(
-    monthly_contribution: float,
-    annual_return: float,
-    years: int
-) -> float:
-    """Future value with monthly contributions and annualized return."""
-    r = annual_return / 12
-    n = years * 12
+def calculate_portfolio_metrics(portfolio: pd.DataFrame):
 
-    if r <= -1:
-        return 0.0
+    if portfolio.empty:
+        return {
+            "return": 0.0,
+            "volatility": 0.0
+        }
 
-    if r == 0:
-        return monthly_contribution * n
+    total_shares = portfolio["Shares"].sum()
 
-    return monthly_contribution * ((1 + r) ** n - 1) / r
+    if total_shares == 0:
+        return {
+            "return": 0.0,
+            "volatility": 0.0
+        }
 
+    portfolio = portfolio.copy()
 
-def required_annual_return(
-    target_amount: float,
-    monthly_contribution: float,
-    years: int
-) -> float:
-    """Solve required CAGR using binary search."""
-    low, high = 0.0, 0.5
-    for _ in range(100):
-        mid = (low + high) / 2
-        fv = future_value_monthly(monthly_contribution, mid, years)
-        if fv < target_amount:
-            low = mid
-        else:
-            high = mid
-    return mid
+    portfolio["Weight"] = portfolio["Shares"] / total_shares
 
+    portfolio_return = (
+        portfolio["Weight"] * portfolio["Total Return (%)"]
+    ).sum()
 
-# =========================================================
-# Strategy constraints
-# =========================================================
+    portfolio_volatility = (
+        portfolio["Weight"] * portfolio["Volatility (%)"]
+    ).sum()
 
-STRATEGY_LIMITS = {
-    "conservative": {
-        "max_volatility": 0.15,
-        "max_high_risk_weight": 0.10,
-    },
-    "moderate": {
-        "max_volatility": 0.25,
-        "max_high_risk_weight": 0.20,
-    },
-    "aggressive": {
-        "max_volatility": 0.40,
-        "max_high_risk_weight": 0.35,
-    },
-    "ultra_aggressive": {
-        "max_volatility": 1.00,
-        "max_high_risk_weight": 0.50,
-    },
-}
+    return {
+        "return": portfolio_return,
+        "volatility": portfolio_volatility
+    }
 
 
-# =========================================================
-# Core recommendation logic
-# =========================================================
+# -----------------------------------------------------
+# Comparison table
+# -----------------------------------------------------
+
+def build_comparison_table(old_metrics, new_metrics):
+
+    df = pd.DataFrame({
+        "Metric": ["Return (%)", "Volatility (%)"],
+        "Old": [
+            old_metrics["return"],
+            old_metrics["volatility"]
+        ],
+        "New": [
+            new_metrics["return"],
+            new_metrics["volatility"]
+        ]
+    })
+
+    df["Change"] = df["New"] - df["Old"]
+
+    return df
+
+
+# -----------------------------------------------------
+# Recommendation text
+# -----------------------------------------------------
+
+def generate_portfolio_comment(old_metrics, new_metrics):
+
+    delta_return = new_metrics["return"] - old_metrics["return"]
+    delta_vol = new_metrics["volatility"] - old_metrics["volatility"]
+
+    # Return text
+    if delta_return > 0:
+        return_text = f"<span style='color:green'>+{delta_return:.2f}%</span>"
+    elif delta_return < 0:
+        return_text = f"<span style='color:red'>{delta_return:.2f}%</span>"
+    else:
+        return_text = "0.00%"
+
+    # Volatility text
+    if delta_vol > 0:
+        vol_text = f"<span style='color:red'>+{delta_vol:.2f}%</span>"
+    elif delta_vol < 0:
+        vol_text = f"<span style='color:green'>{delta_vol:.2f}%</span>"
+    else:
+        vol_text = "0.00%"
+
+    return f"""
+**Portfolio update:**
+
+- Return changed by {return_text}
+- Volatility changed by {vol_text}
+
+Consider risk vs reward before adjusting allocation.
+"""
+
+
+# -----------------------------------------------------
+# Initial recommendation (TOP 3 assets)
+# -----------------------------------------------------
 
 def build_recommendation(
-    company_stats: pd.DataFrame,
-    target_amount: float,
-    years: int,
-    monthly_contribution: float,
-    risk_profile: str,
-) -> Dict[str, object]:
-    """
-    Build investment recommendation based on concrete assets,
-    not abstract distributions.
-    """
+    target_amount,
+    years,
+    monthly_contribution,
+    risk_profile,
+    company_stats
+):
 
-    # -----------------------------------------------------
-    # Step 1. Required return
-    # -----------------------------------------------------
-    required_return = required_annual_return(
-        target_amount, monthly_contribution, years
-    )
+    # Risk thresholds
+    risk_map = {
+        "conservative": 25,
+        "moderate": 33,
+        "aggressive": 50,
+        "ultra_aggressive": 66
+    }
 
-    # -----------------------------------------------------
-    # Step 2. Filter valid assets
-    # -----------------------------------------------------
+    max_risk = risk_map[risk_profile]
+
     df = company_stats.copy()
 
-    required_columns = {"Ticker", "AnnualizedReturn", "Volatility", "Sharpe"}
-    missing = required_columns - set(df.columns)
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
-
-    # Only assets that can theoretically meet the goal
-    df = df[df["AnnualizedReturn"] >= required_return]
+    # Filter by risk
+    df = df[df["Volatility (%)"] <= max_risk]
 
     if df.empty:
         return {
-            "achievable": False,
-            "reason": "No assets have sufficient historical return to meet the target.",
-            "required_return": required_return,
+            "assets": [],
+            "expected_return": 0,
+            "future_value": 0,
+            "achievable": False
         }
 
-    # -----------------------------------------------------
-    # Step 3. Split assets by role
-    # -----------------------------------------------------
-    base_assets = df[
-        (df["Volatility"] <= STRATEGY_LIMITS[risk_profile]["max_volatility"])
-    ]
+    # Sort by return
+    df = df.sort_values("Total Return (%)", ascending=False)
 
-    high_risk_assets = df[
-        (df["Volatility"] > STRATEGY_LIMITS[risk_profile]["max_volatility"])
-    ]
+    top_assets = df.head(3)
 
-    if base_assets.empty and high_risk_assets.empty:
-        return {
-            "achievable": False,
-            "reason": "No assets fit the selected risk constraints.",
-            "required_return": required_return,
-        }
+    expected_return = top_assets["Total Return (%)"].mean()
 
-    # -----------------------------------------------------
-    # Step 4. Portfolio construction (simple heuristic)
-    # -----------------------------------------------------
-    portfolio = []
-
-    # Start with best base asset (highest Sharpe)
-    if not base_assets.empty:
-        base = base_assets.sort_values("Sharpe", ascending=False).iloc[0]
-        portfolio.append({
-            "Ticker": base["Ticker"],
-            "Weight": 1.0,
-            "Return": base["AnnualizedReturn"],
-            "Volatility": base["Volatility"],
-        })
-
-    # Try adding one high-risk asset if needed
-    portfolio_return = sum(
-        p["Weight"] * p["Return"] for p in portfolio
-    )
-
-    if portfolio_return < required_return and not high_risk_assets.empty:
-        hr = high_risk_assets.sort_values(
-            "AnnualizedReturn", ascending=False
-        ).iloc[0]
-
-        max_hr_weight = STRATEGY_LIMITS[risk_profile]["max_high_risk_weight"]
-
-        # Compute minimal weight needed
-        needed_weight = (
-            required_return - portfolio_return
-        ) / (hr["AnnualizedReturn"] - portfolio_return)
-
-        hr_weight = min(max_hr_weight, max(0.0, needed_weight))
-
-        # Adjust base weight
-        portfolio[0]["Weight"] -= hr_weight
-
-        portfolio.append({
-            "Ticker": hr["Ticker"],
-            "Weight": hr_weight,
-            "Return": hr["AnnualizedReturn"],
-            "Volatility": hr["Volatility"],
-        })
-
-        portfolio_return = sum(
-            p["Weight"] * p["Return"] for p in portfolio
-        )
-
-    # -----------------------------------------------------
-    # Step 5. Final feasibility check
-    # -----------------------------------------------------
-    if portfolio_return < required_return:
-        return {
-            "achievable": False,
-            "reason": "Even with maximum allowed risk, the target return cannot be reached.",
-            "required_return": required_return,
-        }
-
-    # -----------------------------------------------------
-    # Step 6. Output
-    # -----------------------------------------------------
-    fv = future_value_monthly(
-        monthly_contribution,
-        portfolio_return,
-        years
-    )
+    # Simple FV
+    fv = monthly_contribution * 12 * years * (1 + expected_return / 100)
 
     return {
-        "achievable": True,
-        "required_return": required_return,
-        "expected_portfolio_return": portfolio_return,
+        "assets": top_assets["Ticker"].tolist(),
+        "expected_return": expected_return / 100,
         "future_value": fv,
-        "gap": fv - target_amount,
-        "portfolio": portfolio,
-        "risk_profile": risk_profile,
-        "notes": (
-            "Portfolio constructed from individual assets based on historical "
-            "annualized returns and volatility. This is not a guarantee of future performance."
-        ),
+        "achievable": fv >= target_amount
     }
